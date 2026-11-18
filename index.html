@@ -1,0 +1,1323 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="theme-color" content="#0f172a">
+    <meta name="description" content="نظام دردشة خاص بأكواد انضمام وصلاحيات (مسؤول / مشرف / مستخدم)">
+    <title>نظام الدردشة الخاص</title>
+
+    <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-auth.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-database.js"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
+
+    <style>
+        * { font-family: 'Cairo', sans-serif; transition: background-color .3s ease, border-color .3s ease; }
+        body { overflow-x: hidden; background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%); min-height: 100vh; }
+        .hidden { display: none !important; }
+        .app-h { height: 100vh; height: 100dvh; }
+        button { cursor: pointer; }
+        button:disabled { opacity: .6; cursor: not-allowed; }
+        :focus-visible { outline: 2px solid #60a5fa; outline-offset: 2px; }
+
+        .loading-spinner { border: 3px solid rgba(255,255,255,.1); border-radius: 50%; border-top: 3px solid #3b82f6; width: 40px; height: 40px; animation: spin 1s linear infinite; }
+        @keyframes spin { to { transform: rotate(360deg); } }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(-20px); } to { opacity: 1; transform: translateY(0); } }
+        @keyframes messageAppear { from { transform: scale(.9) translateY(12px); opacity: 0; } to { transform: scale(1) translateY(0); opacity: 1; } }
+
+        .custom-scrollbar::-webkit-scrollbar { width: 8px; height: 8px; }
+        .custom-scrollbar::-webkit-scrollbar-track { background: rgba(255,255,255,.05); border-radius: 4px; }
+        .custom-scrollbar::-webkit-scrollbar-thumb { background: rgba(59,130,246,.5); border-radius: 4px; }
+        .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: rgba(59,130,246,.8); }
+
+        .message-container { display: flex; margin-bottom: 14px; animation: messageAppear .3s ease-out; }
+        .message-container.user { justify-content: flex-end; }
+        .message-container.other { justify-content: flex-start; }
+        .message-bubble { border-radius: 20px; padding: 12px 16px; margin: 4px 0; word-wrap: break-word; overflow-wrap: anywhere; white-space: pre-wrap; line-height: 1.6; }
+        .message-bubble.user { background: linear-gradient(135deg, #3b82f6, #1d4ed8); color: #fff; box-shadow: 0 4px 15px rgba(59,130,246,.3); }
+        .message-bubble.other { background: linear-gradient(135deg, #374151, #4b5563); color: #f3f4f6; box-shadow: 0 4px 15px rgba(0,0,0,.2); }
+        .message-bubble.admin { background: linear-gradient(135deg, #dc2626, #b91c1c); color: #fff; box-shadow: 0 4px 20px rgba(220,38,38,.4); }
+        .message-bubble.moderator { background: linear-gradient(135deg, #059669, #047857); color: #fff; box-shadow: 0 4px 20px rgba(5,150,105,.4); }
+
+        .btn-gradient { background: linear-gradient(135deg, #3b82f6, #8b5cf6); color: #fff; padding: 12px 24px; border-radius: 14px; font-weight: 600; border: none; display: inline-flex; align-items: center; justify-content: center; gap: 10px; box-shadow: 0 8px 25px rgba(59,130,246,.3); transition: all .3s ease; }
+        .btn-gradient:hover:not(:disabled) { transform: translateY(-2px); box-shadow: 0 12px 30px rgba(59,130,246,.4); }
+        .btn-danger { background: linear-gradient(135deg, #ef4444, #dc2626); color: #fff; padding: 12px 24px; border-radius: 12px; font-weight: 600; border: none; }
+
+        .glass-card { background: rgba(30,41,59,.7); backdrop-filter: blur(15px); border: 1px solid rgba(255,255,255,.1); border-radius: 20px; padding: 24px; transition: all .4s ease; box-shadow: 0 10px 40px rgba(0,0,0,.2); }
+        .glass-card:hover { transform: translateY(-3px); border-color: rgba(59,130,246,.3); }
+        .glass-card.compact { padding: 16px; border-radius: 16px; }
+        .top-nav { background: rgba(15,23,42,.95); backdrop-filter: blur(15px); border-bottom: 1px solid rgba(255,255,255,.1); position: sticky; top: 0; z-index: 30; }
+
+        .badge-admin, .badge-moderator, .badge-user, .owner-badge { padding: 4px 12px; border-radius: 20px; font-size: 12px; font-weight: 700; display: inline-flex; align-items: center; color: #fff; }
+        .badge-admin { background: linear-gradient(135deg, #dc2626, #b91c1c); }
+        .badge-moderator { background: linear-gradient(135deg, #059669, #047857); }
+        .badge-user { background: linear-gradient(135deg, #3b82f6, #2563eb); }
+        .owner-badge { background: linear-gradient(135deg, #f59e0b, #d97706); }
+
+        .admin-tab.active, .user-tab.active { background: linear-gradient(135deg, #3b82f6, #8b5cf6); color: #fff; box-shadow: 0 5px 20px rgba(59,130,246,.3); }
+        .shadow-neon { box-shadow: 0 0 20px rgba(59,130,246,.2), 0 0 40px rgba(59,130,246,.1); }
+
+        .input-glow { background: rgba(30,41,59,.8); border: 2px solid rgba(59,130,246,.3); border-radius: 14px; padding: 14px 18px; color: #fff; font-size: 16px; }
+        .input-glow:focus { outline: none; border-color: #3b82f6; box-shadow: 0 0 0 3px rgba(59,130,246,.15); }
+        .input-glow::placeholder { color: #6b7280; }
+
+        .chat-header-info { background: rgba(30,41,59,.5); border-radius: 12px; padding: 12px 16px; border: 1px solid rgba(255,255,255,.1); }
+        .members-list { max-height: 200px; overflow-y: auto; }
+        .member-item { display: flex; align-items: center; justify-content: space-between; padding: 10px 12px; border-radius: 10px; background: rgba(255,255,255,.05); margin-bottom: 6px; gap: 8px; }
+        .chat-code-display { font-family: monospace; background: rgba(0,0,0,.3); padding: 4px 10px; border-radius: 8px; border: 1px dashed rgba(59,130,246,.5); direction: ltr; display: inline-block; text-align: center; }
+
+        /* تخطيط متجاوب للوحات */
+        .panel-body { display: flex; flex-direction: column; flex: 1; min-height: 0; }
+        .side-nav { display: flex; gap: 8px; overflow-x: auto; padding: 10px 12px; }
+        .side-nav button { white-space: nowrap; flex-shrink: 0; }
+        .side-info { display: none; }
+        .panel-content { flex: 1; overflow-y: auto; padding: 16px; min-height: 0; }
+        @media (min-width: 1024px) {
+            .panel-body { flex-direction: row; }
+            .side { width: 288px; flex-shrink: 0; overflow-y: auto; border-left: 1px solid #1f2937; background: rgba(17,24,39,.5); }
+            .side-nav { flex-direction: column; padding: 16px; overflow: visible; }
+            .side-info { display: block; }
+            .panel-content { padding: 32px; }
+        }
+        .mod-sidebar { position: fixed; top: 0; bottom: 0; right: 0; width: 20rem; max-width: 85vw; transform: translateX(100%); transition: transform .3s ease; z-index: 60; }
+        .mod-sidebar.open { transform: none; }
+        @media (min-width: 1024px) { .mod-sidebar { position: static; transform: none; z-index: auto; } .menu-btn { display: none; } #sidebar-backdrop { display: none !important; } }
+
+        #toast-container { position: fixed; top: 16px; left: 50%; transform: translateX(-50%); z-index: 100; display: flex; flex-direction: column; gap: 8px; width: calc(100% - 32px); max-width: 420px; pointer-events: none; }
+        .toast { background: #111827; color: #fff; padding: 12px 20px; border-radius: 16px; border: 1px solid #1f2937; box-shadow: 0 10px 30px rgba(0,0,0,.4); display: flex; align-items: center; gap: 12px; animation: fadeIn .3s ease-out; }
+
+        @media (prefers-reduced-motion: reduce) { * { animation: none !important; transition: none !important; } }
+    </style>
+</head>
+<body class="text-white">
+    <div id="toast-container" role="status" aria-live="polite"></div>
+
+    <!-- شاشة التحميل -->
+    <div id="loading-screen" class="fixed inset-0 bg-gradient-to-br from-gray-900 to-gray-800 flex flex-col items-center justify-center z-50">
+        <div class="loading-spinner mb-8"></div>
+        <div class="text-2xl font-bold mb-3 bg-gradient-to-r from-blue-400 to-purple-400 bg-clip-text text-transparent">نظام الدردشة الخاص</div>
+        <div class="text-gray-400 text-center">محادثات آمنة • خصوصية تامة</div>
+    </div>
+
+    <!-- تسجيل الدخول -->
+    <div id="login-screen" class="hidden min-h-screen flex flex-col items-center justify-center p-6">
+        <div class="w-full max-w-md">
+            <div class="text-center mb-10">
+                <div class="inline-flex items-center justify-center w-24 h-24 rounded-2xl bg-gradient-to-br from-blue-500 via-purple-600 to-pink-500 mb-6 shadow-neon">
+                    <i class="fas fa-user-shield text-3xl text-white" aria-hidden="true"></i>
+                </div>
+                <h1 class="text-4xl font-bold bg-gradient-to-r from-blue-400 via-purple-400 to-pink-400 bg-clip-text text-transparent mb-3">نظام الدردشة الخاص</h1>
+                <p class="text-gray-400 text-lg">الدخول للمستخدمين المسجلين فقط</p>
+            </div>
+            <div class="glass-card">
+                <form id="login-form" class="space-y-6" novalidate>
+                    <div>
+                        <label for="email" class="block text-gray-300 mb-2 text-sm font-medium"><i class="fas fa-envelope ml-2" aria-hidden="true"></i>البريد الإلكتروني</label>
+                        <input type="email" id="email" class="input-glow w-full" placeholder="أدخل بريدك الإلكتروني" autocomplete="email" dir="ltr" required>
+                    </div>
+                    <div>
+                        <label for="password" class="block text-gray-300 mb-2 text-sm font-medium"><i class="fas fa-lock ml-2" aria-hidden="true"></i>كلمة المرور</label>
+                        <input type="password" id="password" class="input-glow w-full" placeholder="أدخل كلمة المرور" autocomplete="current-password" dir="ltr" required>
+                    </div>
+                    <div class="flex items-center justify-between">
+                        <label class="flex items-center gap-3 text-gray-400 text-sm cursor-pointer">
+                            <input type="checkbox" id="remember" class="h-5 w-5" checked> البقاء مسجلاً دخولاً
+                        </label>
+                        <button type="button" id="forgot-btn" class="text-sm text-blue-400 hover:text-blue-300">نسيت كلمة المرور؟</button>
+                    </div>
+                    <button type="submit" class="btn-gradient w-full text-lg py-4"><i class="fas fa-sign-in-alt" aria-hidden="true"></i> تسجيل الدخول</button>
+                    <div class="pt-6 border-t border-gray-800 text-center">
+                        <button type="button" id="register-btn" class="text-sm text-green-400 hover:text-green-300"><i class="fas fa-user-plus ml-2" aria-hidden="true"></i>تسجيل مستخدم جديد</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <!-- تسجيل جديد -->
+    <div id="register-screen" class="hidden min-h-screen flex flex-col items-center justify-center p-6">
+        <div class="w-full max-w-md">
+            <div class="text-center mb-10">
+                <h1 class="text-4xl font-bold bg-gradient-to-r from-green-400 to-blue-400 bg-clip-text text-transparent mb-3">تسجيل مستخدم جديد</h1>
+                <p class="text-gray-400 text-lg">إنشاء حساب مستخدم عادي</p>
+            </div>
+            <div class="glass-card">
+                <form id="register-form" class="space-y-5" novalidate>
+                    <div>
+                        <label for="register-username" class="block text-gray-300 mb-2 text-sm font-medium">اسم المستخدم</label>
+                        <input type="text" id="register-username" class="input-glow w-full" placeholder="الاسم الذي سيظهر للآخرين" maxlength="40" autocomplete="nickname" required>
+                    </div>
+                    <div>
+                        <label for="register-email" class="block text-gray-300 mb-2 text-sm font-medium">البريد الإلكتروني</label>
+                        <input type="email" id="register-email" class="input-glow w-full" placeholder="أدخل بريدك الإلكتروني" autocomplete="email" dir="ltr" required>
+                    </div>
+                    <div>
+                        <label for="register-password" class="block text-gray-300 mb-2 text-sm font-medium">كلمة المرور</label>
+                        <input type="password" id="register-password" class="input-glow w-full" placeholder="6 أحرف على الأقل" minlength="6" autocomplete="new-password" dir="ltr" required>
+                    </div>
+                    <div>
+                        <label for="register-confirm-password" class="block text-gray-300 mb-2 text-sm font-medium">تأكيد كلمة المرور</label>
+                        <input type="password" id="register-confirm-password" class="input-glow w-full" placeholder="أعد إدخال كلمة المرور" autocomplete="new-password" dir="ltr" required>
+                    </div>
+                    <div class="flex gap-4 pt-2">
+                        <button type="button" id="back-to-login" class="flex-1 py-3 bg-gray-800 text-gray-300 rounded-2xl hover:bg-gray-700 font-bold"><i class="fas fa-arrow-right ml-2" aria-hidden="true"></i>رجوع</button>
+                        <button type="submit" class="flex-1 btn-gradient"><i class="fas fa-user-plus" aria-hidden="true"></i> تسجيل</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <!-- لوحة المستخدم -->
+    <div id="user-panel" class="hidden app-h flex flex-col bg-gradient-to-br from-gray-900 to-gray-950">
+        <nav class="bg-gradient-to-r from-gray-900 via-blue-900 to-gray-900 border-b border-gray-700 px-4 lg:px-8 py-4">
+            <div class="flex items-center justify-between">
+                <div class="flex items-center gap-4">
+                    <div class="p-3 rounded-2xl bg-gradient-to-br from-blue-500 to-blue-600 shadow-neon"><i class="fas fa-user text-white text-xl" aria-hidden="true"></i></div>
+                    <div>
+                        <h1 class="text-xl lg:text-3xl font-bold">لوحة المستخدم</h1>
+                        <p class="text-gray-400 text-sm">انضم للدردشات عبر الأكواد</p>
+                    </div>
+                </div>
+                <div class="flex items-center gap-3">
+                    <div class="text-right hidden md:block"><div class="font-bold" id="user-name">...</div><div class="text-sm text-gray-400">مستخدم</div></div>
+                    <button id="user-panel-logout" class="p-3 rounded-xl bg-gray-800 border border-gray-700 hover:bg-gray-700" aria-label="تسجيل الخروج"><i class="fas fa-sign-out-alt text-red-400" aria-hidden="true"></i></button>
+                </div>
+            </div>
+        </nav>
+        <div class="panel-body">
+            <aside class="side">
+                <div class="side-info p-6 border-b border-gray-800">
+                    <div class="flex items-center gap-4 mb-4">
+                        <div class="w-16 h-16 rounded-2xl bg-gradient-to-br from-blue-500 to-blue-600 flex items-center justify-center" style="border:3px solid #60a5fa"><i class="fas fa-user text-white text-2xl" aria-hidden="true"></i></div>
+                        <div class="min-w-0"><div class="font-bold truncate" id="user-display-name">...</div><div class="text-sm text-gray-400">مستخدم</div></div>
+                    </div>
+                    <div class="grid grid-cols-2 gap-3">
+                        <div class="bg-gray-800 rounded-xl p-3 text-center"><div class="text-xl font-bold text-blue-400" id="user-chats-count">0</div><div class="text-xs text-gray-400">الدردشات</div></div>
+                        <div class="bg-gray-800 rounded-xl p-3 text-center"><div class="text-xl font-bold text-green-400" id="user-messages-count">0</div><div class="text-xs text-gray-400">الرسائل</div></div>
+                    </div>
+                </div>
+                <div class="side-nav" role="tablist">
+                    <button data-tab="chats" role="tab" class="user-tab text-right px-5 py-3 rounded-2xl hover:bg-gray-800 flex items-center gap-3 active"><i class="fas fa-comments text-blue-400" aria-hidden="true"></i><span class="font-medium">دردشاتي</span></button>
+                    <button data-tab="join" role="tab" class="user-tab text-right px-5 py-3 rounded-2xl hover:bg-gray-800 flex items-center gap-3"><i class="fas fa-key text-green-400" aria-hidden="true"></i><span class="font-medium">انضمام بكود</span></button>
+                    <button data-tab="profile" role="tab" class="user-tab text-right px-5 py-3 rounded-2xl hover:bg-gray-800 flex items-center gap-3"><i class="fas fa-user-circle text-purple-400" aria-hidden="true"></i><span class="font-medium">ملفي الشخصي</span></button>
+                </div>
+            </aside>
+            <main class="panel-content custom-scrollbar">
+                <section id="user-tab-chats" class="user-content space-y-6">
+                    <div class="flex items-center justify-between gap-3 flex-wrap">
+                        <h2 class="text-2xl lg:text-3xl font-bold">دردشاتي</h2>
+                        <button id="show-join-chat-btn" class="btn-gradient"><i class="fas fa-key" aria-hidden="true"></i> انضمام بكود جديد</button>
+                    </div>
+                    <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6" id="user-chats-list"></div>
+                </section>
+                <section id="user-tab-join" class="user-content hidden space-y-6">
+                    <div class="text-center mb-6">
+                        <div class="inline-flex items-center justify-center w-28 h-28 rounded-3xl bg-gradient-to-br from-blue-500/20 to-blue-600/20 mb-6 border border-gray-800"><i class="fas fa-key text-5xl text-blue-400" aria-hidden="true"></i></div>
+                        <h2 class="text-3xl font-bold mb-3">انضمام لدردشة</h2>
+                        <p class="text-gray-400 text-lg">أدخل كود الدردشة للانضمام</p>
+                    </div>
+                    <div class="glass-card max-w-md mx-auto space-y-5">
+                        <div>
+                            <label for="join-chat-code" class="block text-gray-300 mb-2 font-bold">كود الدردشة</label>
+                            <input type="text" id="join-chat-code" class="input-glow w-full text-center text-2xl" placeholder="ABC123" maxlength="6" dir="ltr" autocomplete="off" autocapitalize="characters">
+                            <div class="text-sm text-gray-400 mt-2 text-center">اطلب الكود من منشئ الدردشة</div>
+                        </div>
+                        <div id="join-password-wrap" class="hidden">
+                            <label for="join-chat-password" class="block text-gray-300 mb-2 font-bold"><i class="fas fa-lock ml-2" aria-hidden="true"></i>كلمة مرور الدردشة</label>
+                            <input type="password" id="join-chat-password" class="input-glow w-full" placeholder="هذه الدردشة محمية بكلمة مرور" autocomplete="off">
+                        </div>
+                        <button id="join-chat-submit" class="btn-gradient w-full text-lg py-4"><i class="fas fa-sign-in-alt" aria-hidden="true"></i> انضمام للدردشة</button>
+                    </div>
+                </section>
+                <section id="user-tab-profile" class="user-content hidden space-y-6">
+                    <div class="flex items-center justify-between">
+                        <h2 class="text-2xl lg:text-3xl font-bold">ملفي الشخصي</h2>
+                        <button id="refresh-profile" class="p-3 rounded-xl bg-gray-800 hover:bg-gray-700" aria-label="تحديث"><i class="fas fa-sync-alt text-blue-400" aria-hidden="true"></i></button>
+                    </div>
+                    <div class="glass-card max-w-2xl">
+                        <div class="flex items-center gap-6 mb-8">
+                            <div class="w-24 h-24 rounded-2xl bg-gradient-to-br from-blue-500 to-blue-600 flex items-center justify-center"><i class="fas fa-user text-white text-3xl" aria-hidden="true"></i></div>
+                            <div class="min-w-0">
+                                <div class="text-2xl font-bold truncate" id="profile-username">...</div>
+                                <div class="text-gray-400 truncate" id="profile-email">...</div>
+                                <div class="mt-2"><span class="badge-user">مستخدم</span></div>
+                            </div>
+                        </div>
+                        <div class="space-y-4">
+                            <div class="p-4 bg-gray-800/50 rounded-xl"><div class="font-medium">البريد الإلكتروني</div><div class="text-sm text-gray-400" id="profile-email-display">...</div></div>
+                            <div class="p-4 bg-gray-800/50 rounded-xl"><div class="font-medium">تاريخ التسجيل</div><div class="text-sm text-gray-400" id="profile-created-at">...</div></div>
+                            <div class="p-4 bg-gray-800/50 rounded-xl"><div class="font-medium">الدردشات النشطة</div><div class="text-sm text-gray-400" id="profile-active-chats">0 دردشة</div></div>
+                        </div>
+                    </div>
+                </section>
+            </main>
+        </div>
+    </div>
+
+    <!-- لوحة المشرف -->
+    <div id="moderator-app" class="hidden app-h flex flex-col">
+        <nav class="top-nav px-4 lg:px-6 py-3">
+            <div class="flex items-center justify-between">
+                <div class="flex items-center gap-4">
+                    <button id="menu-toggle" class="menu-btn p-3 rounded-xl hover:bg-gray-800" aria-label="القائمة"><i class="fas fa-bars text-xl" aria-hidden="true"></i></button>
+                    <div class="p-3 rounded-xl bg-gradient-to-br from-green-500 to-green-600 shadow-neon"><i class="fas fa-user-shield text-white text-xl" aria-hidden="true"></i></div>
+                    <div>
+                        <h2 class="font-bold text-xl">دردشاتي</h2>
+                        <div class="text-sm text-gray-400"><i class="fas fa-users ml-1" aria-hidden="true"></i><span id="moderator-chats-count">0</span> دردشة</div>
+                    </div>
+                </div>
+                <div class="flex items-center gap-3">
+                    <div class="text-right hidden md:block"><div class="font-bold" id="moderator-display-name">...</div><div class="text-sm text-gray-400">مشرف</div></div>
+                    <button id="moderator-logout" class="p-3 rounded-xl bg-gray-800 border border-gray-700 hover:bg-gray-700" aria-label="تسجيل الخروج"><i class="fas fa-sign-out-alt text-red-400" aria-hidden="true"></i></button>
+                </div>
+            </div>
+        </nav>
+        <div class="flex flex-1 overflow-hidden">
+            <div id="sidebar-backdrop" class="hidden fixed inset-0 bg-black/60 z-50"></div>
+            <aside id="sidebar" class="mod-sidebar bg-gray-900 border-l border-gray-800 flex flex-col">
+                <div class="p-5 flex-1 overflow-y-auto custom-scrollbar">
+                    <div class="flex items-center justify-between mb-5">
+                        <h3 class="font-bold text-lg"><i class="fas fa-comments ml-3 text-green-400" aria-hidden="true"></i>دردشاتي</h3>
+                        <button id="create-chat-btn" class="btn-gradient px-4 py-2 text-sm"><i class="fas fa-plus" aria-hidden="true"></i> جديد</button>
+                    </div>
+                    <div id="moderator-chats-list" class="space-y-3"></div>
+                </div>
+            </aside>
+            <main class="flex-1 flex flex-col items-center justify-center p-6 overflow-y-auto">
+                <div class="text-center max-w-2xl">
+                    <div class="w-28 h-28 rounded-3xl bg-gradient-to-br from-green-500/20 to-green-600/20 flex items-center justify-center mb-6 border border-gray-800 mx-auto"><i class="fas fa-comments text-5xl text-green-400" aria-hidden="true"></i></div>
+                    <h3 class="text-3xl font-bold mb-3">مرحباً بك كمشرف</h3>
+                    <p class="text-gray-400 text-lg mb-8">أنشئ دردشات خاصة، وأضف المستخدمين بالبريد الإلكتروني من زر «إدارة».</p>
+                    <div class="glass-card text-center cursor-pointer max-w-sm mx-auto" id="create-chat-card" role="button" tabindex="0">
+                        <i class="fas fa-plus-circle text-3xl text-green-400 mb-3" aria-hidden="true"></i>
+                        <div class="font-bold text-lg mb-1">إنشاء دردشة جديدة</div>
+                        <div class="text-gray-400 text-sm">إنشاء دردشة خاصة بكود دخول</div>
+                    </div>
+                </div>
+            </main>
+        </div>
+    </div>
+
+    <!-- لوحة المسؤول -->
+    <div id="admin-panel" class="hidden app-h flex flex-col bg-gradient-to-br from-gray-900 to-gray-950">
+        <nav class="bg-gradient-to-r from-gray-900 via-gray-800 to-gray-900 border-b border-gray-700 px-4 lg:px-8 py-4">
+            <div class="flex items-center justify-between">
+                <div class="flex items-center gap-4">
+                    <div class="p-3 rounded-2xl bg-gradient-to-br from-red-500 to-red-600 shadow-neon"><i class="fas fa-user-shield text-white text-xl" aria-hidden="true"></i></div>
+                    <div>
+                        <h1 class="text-xl lg:text-3xl font-bold">لوحة التحكم الإدارية</h1>
+                        <p class="text-gray-400 text-sm">التحكم الكامل - المسؤول فقط</p>
+                    </div>
+                </div>
+                <div class="flex items-center gap-3">
+                    <div class="text-right hidden md:block"><div class="font-bold" id="admin-name">...</div><div class="text-sm text-gray-400">المسؤول الرئيسي</div></div>
+                    <button id="admin-logout" class="p-3 rounded-xl bg-gray-800 border border-gray-700 hover:bg-gray-700" aria-label="تسجيل الخروج"><i class="fas fa-sign-out-alt text-red-400" aria-hidden="true"></i></button>
+                </div>
+            </div>
+        </nav>
+        <div class="panel-body">
+            <aside class="side">
+                <div class="side-info p-6 border-b border-gray-800">
+                    <div class="flex items-center gap-4 mb-4">
+                        <div class="w-16 h-16 rounded-2xl bg-gradient-to-br from-red-500 to-red-600 flex items-center justify-center" style="border:3px solid #f87171"><i class="fas fa-crown text-white text-2xl" aria-hidden="true"></i></div>
+                        <div class="min-w-0"><div class="font-bold truncate" id="admin-display-name">...</div><div class="text-sm text-gray-400">المسؤول الرئيسي</div></div>
+                    </div>
+                    <div class="grid grid-cols-2 gap-3">
+                        <div class="bg-gray-800 rounded-xl p-3 text-center"><div class="text-xl font-bold text-blue-400" id="sidebar-admin-chats">0</div><div class="text-xs text-gray-400">الدردشات</div></div>
+                        <div class="bg-gray-800 rounded-xl p-3 text-center"><div class="text-xl font-bold text-green-400" id="sidebar-admin-users">0</div><div class="text-xs text-gray-400">المستخدمين</div></div>
+                    </div>
+                </div>
+                <div class="side-nav" role="tablist">
+                    <button data-tab="dashboard" role="tab" class="admin-tab text-right px-5 py-3 rounded-2xl hover:bg-gray-800 flex items-center gap-3 active"><i class="fas fa-tachometer-alt text-blue-400" aria-hidden="true"></i><span class="font-medium">لوحة التحكم</span></button>
+                    <button data-tab="all-chats" role="tab" class="admin-tab text-right px-5 py-3 rounded-2xl hover:bg-gray-800 flex items-center gap-3"><i class="fas fa-comments text-green-400" aria-hidden="true"></i><span class="font-medium">جميع الدردشات</span></button>
+                    <button data-tab="users" role="tab" class="admin-tab text-right px-5 py-3 rounded-2xl hover:bg-gray-800 flex items-center gap-3"><i class="fas fa-users text-purple-400" aria-hidden="true"></i><span class="font-medium">إدارة المستخدمين</span></button>
+                    <button data-tab="moderators" role="tab" class="admin-tab text-right px-5 py-3 rounded-2xl hover:bg-gray-800 flex items-center gap-3"><i class="fas fa-user-shield text-yellow-400" aria-hidden="true"></i><span class="font-medium">المشرفين</span></button>
+                </div>
+            </aside>
+            <main class="panel-content custom-scrollbar">
+                <section id="admin-tab-dashboard" class="admin-content space-y-6">
+                    <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+                        <div class="glass-card"><div class="p-3 rounded-2xl bg-blue-500/20 inline-block mb-4"><i class="fas fa-comments text-blue-400 text-2xl" aria-hidden="true"></i></div><div class="text-3xl font-bold mb-1" id="dashboard-chats">0</div><div class="text-gray-400">إجمالي الدردشات</div></div>
+                        <div class="glass-card"><div class="p-3 rounded-2xl bg-green-500/20 inline-block mb-4"><i class="fas fa-users text-green-400 text-2xl" aria-hidden="true"></i></div><div class="text-3xl font-bold mb-1" id="dashboard-users">0</div><div class="text-gray-400">إجمالي المستخدمين</div></div>
+                        <div class="glass-card"><div class="p-3 rounded-2xl bg-yellow-500/20 inline-block mb-4"><i class="fas fa-user-shield text-yellow-400 text-2xl" aria-hidden="true"></i></div><div class="text-3xl font-bold mb-1" id="dashboard-moderators">0</div><div class="text-gray-400">المشرفين</div></div>
+                    </div>
+                    <div class="glass-card">
+                        <div class="flex items-center justify-between mb-6 gap-3 flex-wrap">
+                            <h2 class="text-2xl font-bold">آخر الدردشات النشطة</h2>
+                            <button id="create-chat-admin-btn" class="btn-gradient px-4 py-2 text-sm"><i class="fas fa-plus" aria-hidden="true"></i> إنشاء دردشة</button>
+                        </div>
+                        <div class="overflow-x-auto custom-scrollbar">
+                            <table class="w-full min-w-[640px]">
+                                <thead><tr class="text-right border-b border-gray-800">
+                                    <th class="pb-4 px-4 text-gray-400 font-medium">اسم الدردشة</th><th class="pb-4 px-4 text-gray-400 font-medium">الكود</th><th class="pb-4 px-4 text-gray-400 font-medium">المنشئ</th><th class="pb-4 px-4 text-gray-400 font-medium">الأعضاء</th><th class="pb-4 px-4 text-gray-400 font-medium">آخر نشاط</th><th class="pb-4 px-4 text-gray-400 font-medium">الإجراءات</th>
+                                </tr></thead>
+                                <tbody id="recent-chats-table"></tbody>
+                            </table>
+                        </div>
+                    </div>
+                </section>
+                <section id="admin-tab-all-chats" class="admin-content hidden space-y-6">
+                    <div class="flex items-center justify-between gap-3 flex-wrap">
+                        <h2 class="text-2xl lg:text-3xl font-bold">جميع الدردشات</h2>
+                        <button id="create-chat-all-btn" class="btn-gradient"><i class="fas fa-plus" aria-hidden="true"></i> إنشاء دردشة جديدة</button>
+                    </div>
+                    <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6" id="all-chats-list"></div>
+                </section>
+                <section id="admin-tab-users" class="admin-content hidden space-y-6">
+                    <div class="flex items-center justify-between">
+                        <h2 class="text-2xl lg:text-3xl font-bold">إدارة المستخدمين</h2>
+                        <button id="refresh-users" class="p-3 rounded-xl bg-gray-800 hover:bg-gray-700" aria-label="تحديث"><i class="fas fa-sync-alt text-blue-400" aria-hidden="true"></i></button>
+                    </div>
+                    <div class="glass-card"><div class="overflow-x-auto custom-scrollbar">
+                        <table class="w-full min-w-[640px]">
+                            <thead><tr class="text-right border-b border-gray-800">
+                                <th class="pb-4 px-4 text-gray-400 font-medium">المستخدم</th><th class="pb-4 px-4 text-gray-400 font-medium">البريد</th><th class="pb-4 px-4 text-gray-400 font-medium">الدور</th><th class="pb-4 px-4 text-gray-400 font-medium">التسجيل</th><th class="pb-4 px-4 text-gray-400 font-medium">الإجراءات</th>
+                            </tr></thead>
+                            <tbody id="users-table-body"></tbody>
+                        </table>
+                    </div></div>
+                </section>
+                <section id="admin-tab-moderators" class="admin-content hidden space-y-6">
+                    <div class="flex items-center justify-between gap-3 flex-wrap">
+                        <h2 class="text-2xl lg:text-3xl font-bold">إدارة المشرفين</h2>
+                        <button id="add-moderator-btn" class="btn-gradient"><i class="fas fa-user-shield" aria-hidden="true"></i> تعيين مشرف جديد</button>
+                    </div>
+                    <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6" id="moderators-list"></div>
+                </section>
+            </main>
+        </div>
+    </div>
+
+    <!-- نافذة إنشاء دردشة -->
+    <div id="chat-create-modal" class="hidden fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-4" role="dialog" aria-modal="true" aria-labelledby="chat-create-title">
+        <div class="bg-gray-900 rounded-3xl w-full max-w-md border border-gray-800 shadow-2xl max-h-full overflow-y-auto">
+            <div class="p-6 border-b border-gray-800"><h3 id="chat-create-title" class="text-2xl font-bold flex items-center gap-3"><i class="fas fa-plus-circle text-green-400" aria-hidden="true"></i>إنشاء دردشة جديدة</h3></div>
+            <form id="chat-create-form" class="p-6" novalidate>
+                <div class="space-y-5">
+                    <div>
+                        <label for="chat-name" class="block text-gray-300 mb-2 font-bold">اسم الدردشة</label>
+                        <input type="text" id="chat-name" class="input-glow w-full" placeholder="مثال: فريق العمل" maxlength="60" required>
+                    </div>
+                    <div>
+                        <label for="chat-code" class="block text-gray-300 mb-2 font-bold">كود الدردشة</label>
+                        <input type="text" id="chat-code" class="input-glow w-full text-center text-2xl" placeholder="ABC123" maxlength="6" dir="ltr" autocomplete="off" required>
+                        <div class="text-sm text-gray-400 mt-2">3 إلى 6 أحرف أو أرقام إنجليزية — سيستخدمه المستخدمون للانضمام</div>
+                    </div>
+                    <div>
+                        <label for="chat-password" class="block text-gray-300 mb-2 font-bold">كلمة مرور اختيارية</label>
+                        <input type="password" id="chat-password" class="input-glow w-full" placeholder="اختياري" autocomplete="new-password">
+                    </div>
+                </div>
+                <div class="flex gap-4 mt-8 pt-6 border-t border-gray-800">
+                    <button type="button" id="cancel-chat" class="flex-1 py-3 bg-gray-800 text-gray-300 rounded-2xl hover:bg-gray-700 font-bold">إلغاء</button>
+                    <button type="submit" class="flex-1 btn-gradient"><i class="fas fa-save" aria-hidden="true"></i> إنشاء</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- نافذة إدارة الدردشة -->
+    <div id="chat-manage-modal" class="hidden fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-4" role="dialog" aria-modal="true" aria-labelledby="manage-title">
+        <div class="bg-gray-900 rounded-3xl w-full max-w-lg border border-gray-800 shadow-2xl max-h-full overflow-y-auto">
+            <div class="p-6 border-b border-gray-800"><h3 id="manage-title" class="text-2xl font-bold flex items-center gap-3"><i class="fas fa-cog text-blue-400" aria-hidden="true"></i>إدارة الدردشة</h3></div>
+            <div class="p-6 space-y-6">
+                <div>
+                    <h4 class="font-bold text-lg mb-3" id="manage-chat-name">...</h4>
+                    <div class="text-gray-400">الكود: <span id="manage-chat-code" class="chat-code-display"></span></div>
+                </div>
+                <div>
+                    <div class="block text-gray-300 mb-3 font-bold"><i class="fas fa-users ml-2" aria-hidden="true"></i>الأعضاء (<span id="allowed-users-count">0</span>)</div>
+                    <div id="allowed-users-list" class="space-y-2 max-h-48 overflow-y-auto custom-scrollbar"></div>
+                </div>
+                <div>
+                    <label for="add-user-email" class="block text-gray-300 mb-3 font-bold"><i class="fas fa-user-plus ml-2" aria-hidden="true"></i>إضافة مستخدم بالبريد</label>
+                    <div class="flex gap-2">
+                        <input type="email" id="add-user-email" class="input-glow flex-1 min-w-0" placeholder="بريد المستخدم" dir="ltr">
+                        <button id="add-user-btn" class="btn-gradient px-4">إضافة</button>
+                    </div>
+                </div>
+                <div class="flex gap-4 pt-6 border-t border-gray-800">
+                    <button type="button" id="delete-chat-btn" class="flex-1 py-3 bg-red-900/30 text-red-400 rounded-2xl hover:bg-red-900/40 font-bold"><i class="fas fa-trash ml-2" aria-hidden="true"></i>حذف الدردشة</button>
+                    <button type="button" id="close-manage" class="flex-1 py-3 bg-gray-800 text-gray-300 rounded-2xl hover:bg-gray-700 font-bold">إغلاق</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- نافذة تعيين مشرف -->
+    <div id="moderator-modal" class="hidden fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-4" role="dialog" aria-modal="true" aria-labelledby="mod-title">
+        <div class="bg-gray-900 rounded-3xl w-full max-w-md border border-gray-800 shadow-2xl max-h-full overflow-y-auto">
+            <div class="p-6 border-b border-gray-800"><h3 id="mod-title" class="text-2xl font-bold flex items-center gap-3"><i class="fas fa-user-shield text-yellow-400" aria-hidden="true"></i>تعيين مشرف جديد</h3></div>
+            <form id="moderator-form" class="p-6" novalidate>
+                <div class="space-y-5">
+                    <div>
+                        <label for="moderator-email" class="block text-gray-300 mb-2 font-bold">البريد الإلكتروني</label>
+                        <input type="email" id="moderator-email" class="input-glow w-full" placeholder="بريد المشرف" dir="ltr" required>
+                        <div class="text-xs text-gray-400 mt-2">لو الحساب موجود هيتحول لمشرف مباشرة.</div>
+                    </div>
+                    <div>
+                        <label for="moderator-password" class="block text-gray-300 mb-2 font-bold">كلمة المرور (للحسابات الجديدة فقط)</label>
+                        <input type="password" id="moderator-password" class="input-glow w-full" placeholder="6 أحرف على الأقل" autocomplete="new-password" dir="ltr">
+                    </div>
+                </div>
+                <div class="flex gap-4 mt-8 pt-6 border-t border-gray-800">
+                    <button type="button" id="cancel-moderator" class="flex-1 py-3 bg-gray-800 text-gray-300 rounded-2xl hover:bg-gray-700 font-bold">إلغاء</button>
+                    <button type="submit" class="flex-1 btn-gradient"><i class="fas fa-user-shield" aria-hidden="true"></i> تعيين</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- نافذة التأكيد -->
+    <div id="confirm-modal" class="hidden fixed inset-0 bg-black/80 z-[90] flex items-center justify-center p-4" role="alertdialog" aria-modal="true" aria-labelledby="confirm-text">
+        <div class="bg-gray-900 rounded-3xl w-full max-w-sm border border-gray-800 shadow-2xl p-6">
+            <p id="confirm-text" class="text-lg font-bold mb-6 text-center"></p>
+            <div class="flex gap-4">
+                <button id="confirm-cancel" class="flex-1 py-3 bg-gray-800 text-gray-300 rounded-2xl hover:bg-gray-700 font-bold">إلغاء</button>
+                <button id="confirm-ok" class="flex-1 btn-danger">تأكيد</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- نافذة الدردشة -->
+    <div id="chat-window" class="hidden fixed inset-0 bg-gradient-to-br from-gray-900 to-gray-950 z-40">
+        <div class="h-full flex flex-col" style="height:100vh;height:100dvh">
+            <nav class="top-nav px-4 lg:px-6 py-3 flex items-center justify-between gap-3">
+                <div class="flex items-center gap-3 min-w-0">
+                    <button id="back-from-chat" class="p-3 rounded-xl hover:bg-gray-800 flex items-center gap-2" aria-label="رجوع"><i class="fas fa-arrow-right text-xl" aria-hidden="true"></i><span class="text-sm">رجوع</span></button>
+                    <div class="min-w-0">
+                        <h2 class="font-bold text-xl truncate" id="chat-room-name">...</h2>
+                        <div class="text-sm text-gray-400" id="chat-room-code">كود: ...</div>
+                    </div>
+                </div>
+                <div class="flex items-center gap-3 flex-shrink-0">
+                    <div class="text-sm text-gray-400"><i class="fas fa-users ml-1" aria-hidden="true"></i><span id="chat-members-number">1</span> عضو</div>
+                    <button id="show-members-btn" class="p-2 rounded-xl hover:bg-gray-800" aria-label="معلومات الدردشة"><i class="fas fa-info-circle text-blue-400" aria-hidden="true"></i></button>
+                </div>
+            </nav>
+
+            <div id="chat-info-container" class="chat-header-info mx-4 mt-2 hidden">
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <div class="text-center"><div class="text-sm text-gray-400 mb-1">كود الدردشة</div><div class="chat-code-display" id="chat-info-code">-</div></div>
+                    <div class="text-center"><div class="text-sm text-gray-400 mb-1">المنشئ</div><div class="font-medium truncate" id="chat-info-owner">...</div></div>
+                    <div class="text-center"><div class="text-sm text-gray-400 mb-1">الأعضاء</div><div class="font-medium" id="chat-info-members-count">1</div></div>
+                </div>
+                <div id="members-list-container" class="mt-4 hidden">
+                    <div class="text-sm text-gray-400 mb-2">قائمة الأعضاء:</div>
+                    <div id="chat-members-list" class="members-list custom-scrollbar"></div>
+                </div>
+                <div class="text-center mt-3"><button id="toggle-members-list" class="text-xs text-blue-400 hover:text-blue-300"><i class="fas fa-chevron-down ml-1" aria-hidden="true"></i>إظهار/إخفاء الأعضاء</button></div>
+            </div>
+
+            <div id="chat-messages-area" class="flex-1 overflow-y-auto p-4 lg:p-6 custom-scrollbar">
+                <div id="messages-list"></div>
+                <div id="no-messages" class="h-full flex items-center justify-center text-center">
+                    <div><i class="fas fa-comments text-5xl text-gray-600 mb-4" aria-hidden="true"></i><p class="text-gray-400">لا توجد رسائل بعد</p></div>
+                </div>
+            </div>
+
+            <div class="bg-gray-900 border-t border-gray-800 p-3 lg:p-6">
+                <div class="flex items-end gap-3">
+                    <textarea id="chat-message-input" class="input-glow flex-1 resize-none min-h-[56px] max-h-[150px]" placeholder="اكتب رسالتك هنا..." rows="1" maxlength="1000" aria-label="نص الرسالة"></textarea>
+                    <button id="chat-send-btn" class="btn-gradient px-6 py-4 rounded-2xl" aria-label="إرسال"><i class="fas fa-paper-plane" aria-hidden="true"></i></button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div id="loading-toast" class="hidden fixed top-20 left-1/2 -translate-x-1/2 bg-gray-900 text-white px-6 py-3 rounded-2xl shadow-2xl z-[95] flex items-center gap-4 border border-gray-800">
+        <div class="loading-spinner" style="width:24px;height:24px"></div>
+        <span id="loading-text" class="font-bold">جاري التحميل...</span>
+    </div>
+
+    <script>
+    (function () {
+        'use strict';
+
+        /* ================= Firebase ================= */
+        const firebaseConfig = {
+            apiKey: "AIzaSyDtyoR3uh3Cb9jPy2nAvw2_4Ine6KVeeaw",
+            authDomain: "adminscriptstarko.firebaseapp.com",
+            databaseURL: "https://adminscriptstarko-default-rtdb.firebaseio.com",
+            projectId: "adminscriptstarko",
+            storageBucket: "adminscriptstarko.appspot.com",
+            messagingSenderId: "310036534754",
+            appId: "1:310036534754:android:ba27e270c322f0164e15bb"
+        };
+        firebase.initializeApp(firebaseConfig);
+        const auth = firebase.auth();
+        const db = firebase.database();
+        let secondaryApp = null;
+        const getSecondaryAuth = () => {
+            if (!secondaryApp) secondaryApp = firebase.initializeApp(firebaseConfig, 'secondary');
+            return secondaryApp.auth();
+        };
+
+        /* ================= Helpers ================= */
+        const $ = (id) => document.getElementById(id);
+        const nowISO = () => new Date().toISOString();
+        const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+        const emailKey = (e) => e.toLowerCase().replace(/[.#$\[\]\/%]/g, (c) => '%' + c.charCodeAt(0).toString(16).toUpperCase().padStart(2, '0'));
+        const hex = (buf) => Array.from(new Uint8Array(buf), (x) => x.toString(16).padStart(2, '0')).join('');
+        const randSalt = () => hex(crypto.getRandomValues(new Uint8Array(16)));
+        const sha256 = async (t) => hex(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(t)));
+        const fmtDate = (v) => (v ? new Date(v).toLocaleDateString('ar-EG') : 'غير معروف');
+        const fmtTime = (v) => new Date(v).toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit' });
+        const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+        const ROLE_TEXT = { admin: 'مسؤول', moderator: 'مشرف', user: 'مستخدم' };
+        const ROLE_BADGE = { admin: 'badge-admin', moderator: 'badge-moderator', user: 'badge-user' };
+        const SCREENS = ['loading-screen', 'login-screen', 'register-screen', 'user-panel', 'moderator-app', 'admin-panel'];
+
+        const AUTH_ERRORS = {
+            'auth/user-not-found': 'بيانات الدخول غير صحيحة',
+            'auth/wrong-password': 'بيانات الدخول غير صحيحة',
+            'auth/invalid-credential': 'بيانات الدخول غير صحيحة',
+            'auth/invalid-email': 'بريد إلكتروني غير صالح',
+            'auth/user-disabled': 'هذا الحساب موقوف',
+            'auth/too-many-requests': 'محاولات كثيرة، حاول لاحقاً',
+            'auth/network-request-failed': 'خطأ في الاتصال بالإنترنت',
+            'auth/email-already-in-use': 'البريد الإلكتروني مسجل مسبقاً',
+            'auth/weak-password': 'كلمة المرور ضعيفة جداً',
+            'auth/operation-not-allowed': 'فعّل تسجيل الدخول بالبريد وكلمة المرور من Firebase Console'
+        };
+        const errText = (e, fallback) => {
+            if (!e) return fallback;
+            if (AUTH_ERRORS[e.code]) return AUTH_ERRORS[e.code];
+            if (e.code === 'PERMISSION_DENIED' || /permission_denied/i.test(e.message || '')) return 'ليس لديك صلاحية لتنفيذ هذا الإجراء (تأكد من نشر قواعد الأمان)';
+            return fallback || e.message || 'حدث خطأ غير متوقع';
+        };
+
+        /* ================= التطبيق ================= */
+        class SecureChatApp {
+            constructor() {
+                this.user = null;
+                this.role = null;
+                this.profile = null;
+                this.profileCache = new Map();
+                this.currentChatId = null;
+                this.currentChat = null;
+                this.chatOpen = false;
+                this.msgQuery = null;
+                this.onAdded = null;
+                this.onRemoved = null;
+                this.queue = Promise.resolve();
+                this.registering = false;
+                this.loadingCount = 0;
+                this.confirmResolver = null;
+                this.manageChatId = null;
+                this.bindEvents();
+                this.watchAuth();
+            }
+
+            /* ---------- واجهة عامة ---------- */
+            showScreen(id) {
+                SCREENS.forEach((s) => $(s).classList.add('hidden'));
+                $(id).classList.remove('hidden');
+            }
+            showLoading(text) { this.loadingCount++; $('loading-text').textContent = text || 'جاري التحميل...'; $('loading-toast').classList.remove('hidden'); }
+            hideLoading() { this.loadingCount = Math.max(0, this.loadingCount - 1); if (!this.loadingCount) $('loading-toast').classList.add('hidden'); }
+            notify(message, type) {
+                const icons = { success: ['fa-check-circle', 'text-green-400'], error: ['fa-exclamation-circle', 'text-red-400'], warning: ['fa-exclamation-triangle', 'text-yellow-400'], info: ['fa-info-circle', 'text-blue-400'] };
+                const [icon, color] = icons[type] || icons.info;
+                const t = document.createElement('div');
+                t.className = 'toast';
+                t.innerHTML = `<i class="fas ${icon} ${color} text-xl" aria-hidden="true"></i><span class="font-bold">${esc(message)}</span>`;
+                $('toast-container').appendChild(t);
+                setTimeout(() => { t.style.opacity = '0'; t.style.transition = 'opacity .3s'; setTimeout(() => t.remove(), 300); }, 3500);
+            }
+            openModal(id) {
+                const m = $(id); m.classList.remove('hidden');
+                const f = m.querySelector('input:not([type=hidden]), button'); if (f) setTimeout(() => f.focus(), 50);
+            }
+            closeModal(id) { $(id).classList.add('hidden'); }
+            confirm(text) {
+                return new Promise((resolve) => {
+                    $('confirm-text').textContent = text;
+                    this.confirmResolver = resolve;
+                    this.openModal('confirm-modal');
+                    $('confirm-cancel').focus();
+                });
+            }
+            resolveConfirm(v) { this.closeModal('confirm-modal'); if (this.confirmResolver) { this.confirmResolver(v); this.confirmResolver = null; } }
+
+            /* ---------- ربط الأحداث ---------- */
+            bindEvents() {
+                $('login-form').addEventListener('submit', (e) => { e.preventDefault(); this.login(); });
+                $('forgot-btn').addEventListener('click', () => this.resetPassword());
+                $('register-btn').addEventListener('click', () => this.showRegister());
+                $('back-to-login').addEventListener('click', () => this.showLogin());
+                $('register-form').addEventListener('submit', (e) => { e.preventDefault(); this.register(); });
+
+                ['user-panel-logout', 'admin-logout', 'moderator-logout'].forEach((id) => $(id).addEventListener('click', async () => {
+                    if (await this.confirm('هل تريد تسجيل الخروج؟')) this.logout();
+                }));
+
+                ['create-chat-btn', 'create-chat-card', 'create-chat-admin-btn', 'create-chat-all-btn'].forEach((id) => $(id).addEventListener('click', () => { this.closeSidebar(); this.openCreateChat(); }));
+                $('create-chat-card').addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); this.openCreateChat(); } });
+                $('chat-create-form').addEventListener('submit', (e) => { e.preventDefault(); this.createChat(); });
+                $('cancel-chat').addEventListener('click', () => this.closeModal('chat-create-modal'));
+                $('chat-code').addEventListener('input', (e) => { e.target.value = e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, ''); });
+                $('join-chat-code').addEventListener('input', (e) => { e.target.value = e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, ''); $('join-password-wrap').classList.add('hidden'); });
+
+                $('show-join-chat-btn').addEventListener('click', () => this.switchTab('user', 'join'));
+                $('join-chat-submit').addEventListener('click', () => this.joinChat());
+                $('join-chat-code').addEventListener('keydown', (e) => { if (e.key === 'Enter') this.joinChat(); });
+                $('join-chat-password').addEventListener('keydown', (e) => { if (e.key === 'Enter') this.joinChat(); });
+                $('refresh-profile').addEventListener('click', async () => { await this.loadUserProfile(); this.notify('تم تحديث الملف الشخصي', 'success'); });
+                $('refresh-users').addEventListener('click', async () => { await this.loadAllUsers(); this.notify('تم تحديث قائمة المستخدمين', 'success'); });
+
+                document.querySelectorAll('.admin-tab').forEach((t) => t.addEventListener('click', () => this.switchTab('admin', t.dataset.tab)));
+                document.querySelectorAll('.user-tab').forEach((t) => t.addEventListener('click', () => this.switchTab('user', t.dataset.tab)));
+
+                $('add-user-btn').addEventListener('click', () => this.addUserToChat());
+                $('add-user-email').addEventListener('keydown', (e) => { if (e.key === 'Enter') this.addUserToChat(); });
+                $('close-manage').addEventListener('click', () => this.closeModal('chat-manage-modal'));
+                $('delete-chat-btn').addEventListener('click', () => this.deleteChat(this.manageChatId, true));
+
+                $('add-moderator-btn').addEventListener('click', () => this.openModal('moderator-modal'));
+                $('cancel-moderator').addEventListener('click', () => this.closeModal('moderator-modal'));
+                $('moderator-form').addEventListener('submit', (e) => { e.preventDefault(); this.assignModerator(); });
+
+                $('confirm-ok').addEventListener('click', () => this.resolveConfirm(true));
+                $('confirm-cancel').addEventListener('click', () => this.resolveConfirm(false));
+
+                $('menu-toggle').addEventListener('click', () => { $('sidebar').classList.toggle('open'); $('sidebar-backdrop').classList.toggle('hidden', !$('sidebar').classList.contains('open')); });
+                $('sidebar-backdrop').addEventListener('click', () => this.closeSidebar());
+
+                // الدردشة
+                $('back-from-chat').addEventListener('click', () => this.requestCloseChat());
+                $('chat-send-btn').addEventListener('click', () => this.sendMessage());
+                const input = $('chat-message-input');
+                input.addEventListener('input', () => { input.style.height = 'auto'; input.style.height = Math.min(input.scrollHeight, 150) + 'px'; });
+                input.addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) { e.preventDefault(); this.sendMessage(); } });
+                $('show-members-btn').addEventListener('click', () => {
+                    const c = $('chat-info-container'); c.classList.toggle('hidden');
+                    if (!c.classList.contains('hidden')) this.loadChatInfo();
+                });
+                $('toggle-members-list').addEventListener('click', () => $('members-list-container').classList.toggle('hidden'));
+
+                // أزرار ديناميكية
+                document.addEventListener('click', (e) => {
+                    const b = e.target.closest('[data-action]'); if (!b) return;
+                    const id = b.dataset.id, a = b.dataset.action;
+                    if (a === 'enter') this.enterChat(id);
+                    else if (a === 'manage') this.manageChat(id);
+                    else if (a === 'delete') this.deleteChat(id, false);
+                    else if (a === 'join') this.switchTab('user', 'join');
+                    else if (a === 'create') this.openCreateChat();
+                    else if (a === 'revoke') this.revokeAccess(id, b.dataset.chat);
+                    else if (a === 'role') this.changeUserRole(id, b.dataset.role);
+                    else if (a === 'del-msg') this.deleteMessage(id);
+                });
+
+                // الخلفية تغلق النوافذ
+                ['chat-create-modal', 'chat-manage-modal', 'moderator-modal'].forEach((id) => $(id).addEventListener('mousedown', (e) => { if (e.target === $(id)) this.closeModal(id); }));
+                $('confirm-modal').addEventListener('mousedown', (e) => { if (e.target === $('confirm-modal')) this.resolveConfirm(false); });
+
+                document.addEventListener('keydown', (e) => {
+                    if (e.key !== 'Escape') return;
+                    if (!$('confirm-modal').classList.contains('hidden')) return this.resolveConfirm(false);
+                    const open = ['moderator-modal', 'chat-manage-modal', 'chat-create-modal'].find((id) => !$(id).classList.contains('hidden'));
+                    if (open) return this.closeModal(open);
+                    if (this.chatOpen) this.requestCloseChat();
+                });
+                window.addEventListener('popstate', () => { if (this.chatOpen) this.closeChatUI(); });
+                window.addEventListener('offline', () => this.notify('انقطع الاتصال بالإنترنت', 'warning'));
+                window.addEventListener('online', () => this.notify('عاد الاتصال بالإنترنت', 'success'));
+            }
+            closeSidebar() { $('sidebar').classList.remove('open'); $('sidebar-backdrop').classList.add('hidden'); }
+
+            /* ---------- المصادقة ---------- */
+            watchAuth() {
+                auth.onAuthStateChanged(async (user) => {
+                    if (this.registering) return;
+                    if (!user) { this.resetState(); this.showLogin(); return; }
+                    this.user = user;
+                    await this.bootstrap();
+                }, (err) => { console.error(err); this.notify('خطأ في التحقق من الهوية', 'error'); this.showLogin(); });
+            }
+            resetState() {
+                this.closeChatUI();
+                this.user = null; this.role = null; this.profile = null; this.profileCache.clear();
+            }
+            async bootstrap() {
+                try {
+                    let snap = await db.ref('users/' + this.user.uid).once('value');
+                    let p = snap.val();
+                    if (!p) p = await this.createProfile(this.user, (this.user.email || 'user').split('@')[0]);
+                    this.profile = p; this.role = p.role;
+                    this.profileCache.set(this.user.uid, p);
+                    this.showAppropriateScreen();
+                } catch (e) {
+                    console.error('bootstrap', e);
+                    this.notify(errText(e, 'تعذر تحميل بيانات الحساب'), 'error');
+                    try { await auth.signOut(); } catch (_) {}
+                    this.showLogin();
+                } finally {
+                    this.hideLoading();
+                }
+            }
+            async createProfile(user, username) {
+                const email = (user.email || '').toLowerCase();
+                const base = { username: username.slice(0, 40), email, role: 'user', createdAt: nowISO() };
+                const idx = 'emailIndex/' + emailKey(email);
+                let claimed = true;
+                try { claimed = (await db.ref('config/adminClaimed').once('value')).exists(); } catch (_) { claimed = true; }
+                if (!claimed) {
+                    try {
+                        const admin = Object.assign({}, base, { role: 'admin' });
+                        await db.ref().update({ ['users/' + user.uid]: admin, 'config/adminClaimed': user.uid, [idx]: user.uid });
+                        return admin;
+                    } catch (_) { /* تم حجز المسؤول من قبل */ }
+                }
+                await db.ref().update({ ['users/' + user.uid]: base, [idx]: user.uid });
+                return base;
+            }
+            async login() {
+                const email = $('email').value.trim(), pw = $('password').value;
+                if (!email || !pw) return this.notify('يرجى إدخال البريد الإلكتروني وكلمة المرور', 'error');
+                if (!EMAIL_RE.test(email)) return this.notify('بريد إلكتروني غير صالح', 'error');
+                this.showLoading('جاري تسجيل الدخول...');
+                try {
+                    await auth.setPersistence($('remember').checked ? firebase.auth.Auth.Persistence.LOCAL : firebase.auth.Auth.Persistence.SESSION);
+                    await auth.signInWithEmailAndPassword(email, pw); // التوجيه يتم داخل onAuthStateChanged
+                } catch (e) {
+                    this.hideLoading();
+                    this.notify(errText(e, 'خطأ في تسجيل الدخول'), 'error');
+                }
+            }
+            async resetPassword() {
+                const email = $('email').value.trim();
+                if (!EMAIL_RE.test(email)) return this.notify('اكتب بريدك الإلكتروني في الخانة أولاً', 'warning');
+                try { await auth.sendPasswordResetEmail(email); this.notify('تم إرسال رابط إعادة تعيين كلمة المرور', 'success'); }
+                catch (e) { this.notify(errText(e, 'تعذر إرسال الرابط'), 'error'); }
+            }
+            async register() {
+                const username = $('register-username').value.trim();
+                const email = $('register-email').value.trim().toLowerCase();
+                const pw = $('register-password').value, pw2 = $('register-confirm-password').value;
+                if (!username || !email || !pw || !pw2) return this.notify('يرجى تعبئة جميع الحقول', 'error');
+                if (!EMAIL_RE.test(email)) return this.notify('بريد إلكتروني غير صالح', 'error');
+                if (pw.length < 6) return this.notify('كلمة المرور يجب أن تكون 6 أحرف على الأقل', 'error');
+                if (pw !== pw2) return this.notify('كلمتا المرور غير متطابقتين', 'error');
+                this.showLoading('جاري إنشاء الحساب...');
+                this.registering = true;
+                let created = false;
+                try {
+                    const cred = await auth.createUserWithEmailAndPassword(email, pw);
+                    created = true;
+                    this.user = cred.user;
+                    const p = await this.createProfile(cred.user, username);
+                    this.registering = false;
+                    this.profile = p; this.role = p.role; this.profileCache.set(cred.user.uid, p);
+                    this.notify(p.role === 'admin' ? 'تم إنشاء الحساب! أنت الآن المسؤول الرئيسي' : 'تم إنشاء الحساب بنجاح!', 'success');
+                    this.showAppropriateScreen();
+                    this.hideLoading();
+                } catch (e) {
+                    this.registering = false;
+                    if (created) { await this.bootstrap(); this.notify(errText(e, 'تم إنشاء الحساب مع خطأ في حفظ الملف'), 'warning'); }
+                    else { this.hideLoading(); this.notify(errText(e, 'خطأ في إنشاء الحساب'), 'error'); }
+                }
+            }
+            async logout() {
+                try { this.closeChatUI(); await auth.signOut(); this.notify('تم تسجيل الخروج بنجاح', 'success'); }
+                catch (e) { this.notify('خطأ في تسجيل الخروج', 'error'); }
+            }
+            showLogin() {
+                this.showScreen('login-screen');
+                $('password').value = '';
+                $('login-form').dataset.ready = '1';
+            }
+            showRegister() {
+                this.showScreen('register-screen');
+                ['register-username', 'register-email', 'register-password', 'register-confirm-password'].forEach((i) => ($(i).value = ''));
+                $('register-username').focus();
+            }
+            showAppropriateScreen() {
+                const email = this.user.email || '';
+                const name = this.profile.username || email;
+                if (this.role === 'admin') {
+                    this.showScreen('admin-panel');
+                    $('admin-name').textContent = email; $('admin-display-name').textContent = name;
+                    this.switchTab('admin', 'dashboard');
+                } else if (this.role === 'moderator') {
+                    this.showScreen('moderator-app');
+                    $('moderator-display-name').textContent = name;
+                    this.loadModeratorChats();
+                } else {
+                    this.showScreen('user-panel');
+                    $('user-name').textContent = name; $('user-display-name').textContent = name;
+                    $('profile-username').textContent = name; $('profile-email').textContent = email; $('profile-email-display').textContent = email;
+                    $('user-messages-count').textContent = this.profile.messageCount || 0;
+                    this.switchTab('user', 'chats');
+                }
+            }
+
+            /* ---------- التبويبات ---------- */
+            switchTab(prefix, name) {
+                document.querySelectorAll('.' + prefix + '-tab').forEach((t) => { const a = t.dataset.tab === name; t.classList.toggle('active', a); t.setAttribute('aria-selected', a); });
+                document.querySelectorAll('.' + prefix + '-content').forEach((c) => c.classList.toggle('hidden', c.id !== prefix + '-tab-' + name));
+                if (prefix === 'admin') {
+                    if (name === 'dashboard') this.loadAdminDashboard();
+                    else if (name === 'all-chats') this.loadAllChats();
+                    else if (name === 'users') this.loadAllUsers();
+                    else if (name === 'moderators') this.loadModerators();
+                } else {
+                    if (name === 'chats') this.loadUserChats();
+                    else if (name === 'profile') this.loadUserProfile();
+                    else if (name === 'join') setTimeout(() => $('join-chat-code').focus(), 50);
+                }
+            }
+            refreshView() {
+                if (this.role === 'admin') {
+                    const active = document.querySelector('.admin-tab.active');
+                    this.switchTab('admin', active ? active.dataset.tab : 'dashboard');
+                } else if (this.role === 'moderator') this.loadModeratorChats();
+                else if (this.role === 'user') this.loadUserChats();
+            }
+
+            /* ---------- بيانات المستخدمين ---------- */
+            async getProfile(uid) {
+                if (this.profileCache.has(uid)) return this.profileCache.get(uid);
+                let p = null;
+                try { p = (await db.ref('users/' + uid).once('value')).val(); } catch (_) {}
+                p = p || { username: 'مجهول', email: '', role: 'user' };
+                this.profileCache.set(uid, p);
+                return p;
+            }
+
+            /* ---------- جلب الدردشات ---------- */
+            toChats(val) { return Object.entries(val || {}).map(([id, c]) => Object.assign({ id }, c)); }
+            async fetchMyChats() {
+                const ids = Object.keys((await db.ref('userChats/' + this.user.uid).once('value')).val() || {});
+                const snaps = await Promise.all(ids.map((id) => db.ref('chats/' + id).once('value').catch(() => null)));
+                return snaps.filter((s) => s && s.exists()).map((s) => Object.assign({ id: s.key }, s.val()));
+            }
+            chatCard(chat, compact) {
+                const isOwner = chat.owner === this.user.uid;
+                const count = Object.keys(chat.members || {}).length;
+                const canManage = this.role === 'admin' || isOwner;
+                return `<div class="glass-card${compact ? ' compact' : ''}">
+                    <div class="flex items-center justify-between mb-3 gap-2">
+                        <div class="flex items-center gap-3 min-w-0">
+                            <div class="p-3 rounded-2xl ${isOwner ? 'bg-yellow-500/20' : 'bg-gray-800'}"><i class="fas ${chat.hasPassword ? 'fa-lock' : 'fa-comments'} ${isOwner ? 'text-yellow-400' : 'text-blue-400'}" aria-hidden="true"></i></div>
+                            <div class="min-w-0">
+                                <div class="font-bold text-lg truncate">${esc(chat.name || 'بدون اسم')}</div>
+                                <div class="text-sm text-gray-400">الكود: <span class="chat-code-display">${esc(chat.code || '-')}</span></div>
+                            </div>
+                        </div>
+                        ${isOwner ? '<span class="owner-badge">مالك</span>' : ''}
+                    </div>
+                    <div class="text-gray-400 text-sm mb-3 truncate">المنشئ: ${esc(chat.ownerEmail || 'غير معروف')}</div>
+                    <div class="flex items-center justify-between gap-3">
+                        <span class="text-sm text-gray-400">${count} عضو</span>
+                        <div class="flex gap-2">
+                            <button data-action="enter" data-id="${esc(chat.id)}" class="px-4 py-2 bg-blue-900/30 text-blue-400 rounded-xl hover:bg-blue-900/40">دخول</button>
+                            ${canManage ? `<button data-action="manage" data-id="${esc(chat.id)}" class="px-4 py-2 bg-gray-800 text-gray-300 rounded-xl hover:bg-gray-700">إدارة</button>` : ''}
+                        </div>
+                    </div></div>`;
+            }
+            emptyChats(withJoin, withCreate) {
+                return `<div class="col-span-full glass-card text-center py-10"><i class="fas fa-comments text-5xl text-gray-600 mb-4" aria-hidden="true"></i><p class="text-gray-400 mb-5">لا توجد دردشات بعد</p>
+                    ${withJoin ? '<button data-action="join" class="btn-gradient"><i class="fas fa-key" aria-hidden="true"></i> انضم لدردشة</button>' : ''}
+                    ${withCreate ? '<button data-action="create" class="btn-gradient"><i class="fas fa-plus" aria-hidden="true"></i> إنشاء دردشة</button>' : ''}</div>`;
+            }
+            async loadUserChats() {
+                try {
+                    const chats = await this.fetchMyChats();
+                    $('user-chats-list').innerHTML = chats.length ? chats.map((c) => this.chatCard(c)).join('') : this.emptyChats(true, false);
+                    $('user-chats-count').textContent = chats.length;
+                    $('profile-active-chats').textContent = chats.length + ' دردشة';
+                } catch (e) { console.error(e); this.notify(errText(e, 'خطأ في تحميل الدردشات'), 'error'); }
+            }
+            async loadModeratorChats() {
+                try {
+                    const chats = await this.fetchMyChats();
+                    $('moderator-chats-list').innerHTML = chats.length
+                        ? chats.map((c) => this.chatCard(c, true)).join('')
+                        : '<div class="text-center py-8 text-gray-500"><i class="fas fa-comments text-3xl mb-3" aria-hidden="true"></i><p>لا توجد دردشات بعد</p></div>';
+                    $('moderator-chats-count').textContent = chats.length;
+                } catch (e) { console.error(e); this.notify(errText(e, 'خطأ في تحميل الدردشات'), 'error'); }
+            }
+            async loadAllChats() {
+                try {
+                    const chats = this.toChats((await db.ref('chats').once('value')).val());
+                    $('all-chats-list').innerHTML = chats.length ? chats.map((c) => this.chatCard(c)).join('') : this.emptyChats(false, true);
+                } catch (e) { console.error(e); this.notify(errText(e, 'خطأ في تحميل الدردشات'), 'error'); }
+            }
+            async loadAdminDashboard() {
+                try {
+                    const [cs, us] = await Promise.all([db.ref('chats').once('value'), db.ref('users').once('value')]);
+                    const chats = this.toChats(cs.val()), users = us.val() || {};
+                    const mods = Object.values(users).filter((u) => u.role === 'moderator').length;
+                    $('dashboard-chats').textContent = chats.length; $('sidebar-admin-chats').textContent = chats.length;
+                    $('dashboard-users').textContent = Object.keys(users).length; $('sidebar-admin-users').textContent = Object.keys(users).length;
+                    $('dashboard-moderators').textContent = mods;
+                    chats.sort((a, b) => String(b.lastActivity || b.createdAt || '').localeCompare(String(a.lastActivity || a.createdAt || '')));
+                    const rows = chats.slice(0, 10).map((c) => `<tr class="border-b border-gray-800 hover:bg-gray-800/50">
+                        <td class="px-4 py-4">${esc(c.name || 'بدون اسم')}</td>
+                        <td class="px-4 py-4"><span class="chat-code-display">${esc(c.code || '-')}</span></td>
+                        <td class="px-4 py-4">${esc(c.ownerEmail || 'غير معروف')}</td>
+                        <td class="px-4 py-4">${Object.keys(c.members || {}).length}</td>
+                        <td class="px-4 py-4 text-gray-400 text-sm">${fmtDate(c.lastActivity || c.createdAt)}</td>
+                        <td class="px-4 py-4"><div class="flex gap-3">
+                            <button data-action="enter" data-id="${esc(c.id)}" class="text-blue-400 hover:text-blue-300" aria-label="دخول"><i class="fas fa-sign-in-alt" aria-hidden="true"></i></button>
+                            <button data-action="manage" data-id="${esc(c.id)}" class="text-gray-400 hover:text-gray-300" aria-label="إدارة"><i class="fas fa-cog" aria-hidden="true"></i></button>
+                            <button data-action="delete" data-id="${esc(c.id)}" class="text-red-400 hover:text-red-300" aria-label="حذف"><i class="fas fa-trash" aria-hidden="true"></i></button></div></td></tr>`);
+                    $('recent-chats-table').innerHTML = rows.length ? rows.join('') : '<tr><td colspan="6" class="px-4 py-8 text-center text-gray-500">لا توجد دردشات بعد</td></tr>';
+                } catch (e) { console.error(e); this.notify(errText(e, 'خطأ في تحميل البيانات'), 'error'); }
+            }
+            async loadAllUsers() {
+                try {
+                    const users = (await db.ref('users').once('value')).val() || {};
+                    const entries = Object.entries(users);
+                    $('users-table-body').innerHTML = entries.length ? entries.map(([uid, u]) => {
+                        const self = uid === this.user.uid;
+                        const action = u.role !== 'admin' && !self
+                            ? `<button data-action="role" data-id="${esc(uid)}" data-role="${u.role === 'moderator' ? 'user' : 'moderator'}" class="px-4 py-2 bg-gray-800 text-gray-300 rounded-xl hover:bg-gray-700">${u.role === 'moderator' ? 'إزالة مشرف' : 'تعيين مشرف'}</button>` : '';
+                        return `<tr class="border-b border-gray-800 hover:bg-gray-800/50">
+                            <td class="px-4 py-4"><div class="flex items-center gap-3"><div class="w-10 h-10 rounded-xl bg-gradient-to-br from-blue-500 to-blue-600 flex items-center justify-center"><i class="fas fa-user text-white" aria-hidden="true"></i></div><div class="font-bold">${esc(u.username || u.email)}</div></div></td>
+                            <td class="px-4 py-4">${esc(u.email)}</td>
+                            <td class="px-4 py-4"><span class="${ROLE_BADGE[u.role] || 'badge-user'}">${ROLE_TEXT[u.role] || 'مستخدم'}</span></td>
+                            <td class="px-4 py-4 text-gray-400">${fmtDate(u.createdAt)}</td>
+                            <td class="px-4 py-4">${action}</td></tr>`;
+                    }).join('') : '<tr><td colspan="5" class="px-4 py-8 text-center text-gray-500">لا يوجد مستخدمين بعد</td></tr>';
+                } catch (e) { console.error(e); this.notify(errText(e, 'خطأ في تحميل المستخدمين'), 'error'); }
+            }
+            async loadModerators() {
+                try {
+                    const users = (await db.ref('users').once('value')).val() || {};
+                    const mods = Object.entries(users).filter(([, u]) => u.role === 'moderator');
+                    $('moderators-list').innerHTML = mods.length ? mods.map(([uid, m]) => `<div class="glass-card">
+                        <div class="flex items-center gap-4 mb-4"><div class="w-14 h-14 rounded-2xl bg-gradient-to-br from-yellow-500 to-yellow-600 flex items-center justify-center"><i class="fas fa-user-shield text-white" aria-hidden="true"></i></div>
+                        <div class="min-w-0"><div class="font-bold text-lg truncate">${esc(m.username || m.email)}</div><div class="text-sm text-gray-400">مشرف</div></div></div>
+                        <div class="space-y-2 mb-4 text-sm"><div class="flex justify-between gap-2"><span class="text-gray-400">البريد:</span><span class="font-medium truncate">${esc(m.email)}</span></div>
+                        <div class="flex justify-between"><span class="text-gray-400">التسجيل:</span><span class="font-medium">${fmtDate(m.createdAt)}</span></div></div>
+                        <button data-action="role" data-id="${esc(uid)}" data-role="user" class="w-full py-3 bg-red-900/30 text-red-400 rounded-2xl hover:bg-red-900/40">إزالة صلاحيات المشرف</button></div>`).join('')
+                        : '<div class="col-span-full glass-card text-center py-10"><i class="fas fa-user-shield text-5xl text-gray-600 mb-4" aria-hidden="true"></i><p class="text-gray-400">لا يوجد مشرفين بعد</p></div>';
+                } catch (e) { console.error(e); this.notify(errText(e, 'خطأ في تحميل المشرفين'), 'error'); }
+            }
+            async loadUserProfile() {
+                try {
+                    const p = (await db.ref('users/' + this.user.uid).once('value')).val();
+                    if (p) {
+                        this.profile = p; this.profileCache.set(this.user.uid, p);
+                        $('profile-created-at').textContent = fmtDate(p.createdAt);
+                        $('profile-username').textContent = p.username || '';
+                        $('user-messages-count').textContent = p.messageCount || 0;
+                    }
+                } catch (e) { console.error(e); }
+            }
+
+            /* ---------- الأدوار ---------- */
+            async changeUserRole(uid, newRole) {
+                if (this.role !== 'admin' || uid === this.user.uid) return;
+                if (!(await this.confirm(newRole === 'moderator' ? 'تعيين هذا المستخدم كمشرف؟' : 'إزالة صلاحيات المشرف؟'))) return;
+                this.showLoading('جاري تحديث الصلاحيات...');
+                try {
+                    await db.ref('users/' + uid + '/role').set(newRole);
+                    this.profileCache.delete(uid);
+                    this.notify('تم تحديث الصلاحيات بنجاح', 'success');
+                    this.loadAllUsers(); this.loadModerators(); this.loadAdminDashboard();
+                } catch (e) { this.notify(errText(e, 'خطأ في تغيير الصلاحيات'), 'error'); }
+                finally { this.hideLoading(); }
+            }
+            async assignModerator() {
+                const email = $('moderator-email').value.trim().toLowerCase();
+                const pw = $('moderator-password').value;
+                if (!EMAIL_RE.test(email)) return this.notify('بريد إلكتروني غير صالح', 'error');
+                this.showLoading('جاري تعيين المشرف...');
+                try {
+                    const existing = (await db.ref('emailIndex/' + emailKey(email)).once('value')).val();
+                    if (existing) {
+                        const p = await this.getProfile(existing);
+                        if (p.role === 'admin') { this.notify('هذا الحساب مسؤول بالفعل', 'warning'); return; }
+                        await db.ref('users/' + existing + '/role').set('moderator');
+                        this.profileCache.delete(existing);
+                        this.notify('تم تحديث صلاحيات المستخدم إلى مشرف', 'success');
+                    } else {
+                        if (pw.length < 6) { this.notify('أدخل كلمة مرور من 6 أحرف على الأقل للحساب الجديد', 'error'); return; }
+                        const sec = getSecondaryAuth(); // حتى لا يتم تسجيل خروج المسؤول
+                        const cred = await sec.createUserWithEmailAndPassword(email, pw);
+                        const uid = cred.user.uid;
+                        await sec.signOut();
+                        await db.ref().update({
+                            ['users/' + uid]: { username: email.split('@')[0], email, role: 'moderator', createdAt: nowISO(), assignedBy: this.user.email, assignedAt: nowISO() },
+                            ['emailIndex/' + emailKey(email)]: uid
+                        });
+                        this.notify('تم إنشاء حساب المشرف بنجاح', 'success');
+                    }
+                    this.closeModal('moderator-modal'); $('moderator-form').reset();
+                    this.loadModerators(); this.loadAllUsers(); this.loadAdminDashboard();
+                } catch (e) { console.error(e); this.notify(errText(e, 'خطأ في تعيين المشرف'), 'error'); }
+                finally { this.hideLoading(); }
+            }
+
+            /* ---------- إنشاء / انضمام / إدارة ---------- */
+            openCreateChat() {
+                if (this.role !== 'admin' && this.role !== 'moderator') return this.notify('إنشاء الدردشات للمشرفين والمسؤول فقط', 'warning');
+                $('chat-create-form').reset(); this.openModal('chat-create-modal');
+            }
+            async createChat() {
+                const name = $('chat-name').value.trim();
+                const code = $('chat-code').value.trim().toUpperCase();
+                const password = $('chat-password').value;
+                if (!name || !code) return this.notify('يرجى تعبئة الحقول المطلوبة', 'error');
+                if (!/^[A-Z0-9]{3,6}$/.test(code)) return this.notify('الكود: 3 إلى 6 أحرف أو أرقام إنجليزية', 'error');
+                this.showLoading('جاري إنشاء الدردشة...');
+                try {
+                    if ((await db.ref('chatCodes/' + code).once('value')).exists()) { this.notify('هذا الكود مستخدم مسبقاً', 'error'); return; }
+                    const id = db.ref('chats').push().key;
+                    const uid = this.user.uid, now = nowISO();
+                    const codeData = { chatId: id, owner: uid, name, hasPassword: !!password };
+                    if (password) { codeData.salt = randSalt(); codeData.passwordHash = await sha256(codeData.salt + password); }
+                    await db.ref().update({
+                        ['chats/' + id]: { name, code, owner: uid, ownerEmail: this.user.email, hasPassword: !!password, createdAt: now, lastActivity: now, members: { [uid]: { joinedAt: now } } },
+                        ['chatCodes/' + code]: codeData,
+                        ['userChats/' + uid + '/' + id]: true
+                    });
+                    this.closeModal('chat-create-modal');
+                    this.notify('تم إنشاء الدردشة بنجاح!', 'success');
+                    this.refreshView();
+                } catch (e) { console.error(e); this.notify(errText(e, 'خطأ في إنشاء الدردشة'), 'error'); }
+                finally { this.hideLoading(); }
+            }
+            async joinChat() {
+                const code = $('join-chat-code').value.trim().toUpperCase();
+                if (!code) return this.notify('يرجى إدخال كود الدردشة', 'error');
+                this.showLoading('جاري البحث عن الدردشة...');
+                try {
+                    const info = (await db.ref('chatCodes/' + code).once('value')).val();
+                    if (!info) { this.notify('كود الدردشة غير صحيح', 'error'); return; }
+                    const uid = this.user.uid;
+                    const already = (await db.ref('userChats/' + uid + '/' + info.chatId).once('value')).exists();
+                    if (already) { this.notify('أنت بالفعل عضو في هذه الدردشة', 'info'); this.enterChat(info.chatId); return; }
+                    if (info.hasPassword) {
+                        const pw = $('join-chat-password').value;
+                        if (!pw) { $('join-password-wrap').classList.remove('hidden'); $('join-chat-password').focus(); this.notify('أدخل كلمة مرور الدردشة', 'warning'); return; }
+                        if ((await sha256(info.salt + pw)) !== info.passwordHash) { this.notify('كلمة المرور غير صحيحة', 'error'); return; }
+                    }
+                    await db.ref().update({
+                        ['chats/' + info.chatId + '/members/' + uid]: { joinedAt: nowISO() },
+                        ['userChats/' + uid + '/' + info.chatId]: true
+                    });
+                    $('join-chat-code').value = ''; $('join-chat-password').value = ''; $('join-password-wrap').classList.add('hidden');
+                    this.notify('تم إضافتك إلى الدردشة بنجاح', 'success');
+                    this.enterChat(info.chatId);
+                } catch (e) { console.error(e); this.notify(errText(e, 'خطأ في الانضمام للدردشة'), 'error'); }
+                finally { this.hideLoading(); }
+            }
+            async manageChat(chatId) {
+                try {
+                    const chat = (await db.ref('chats/' + chatId).once('value')).val();
+                    if (!chat) return this.notify('الدردشة غير موجودة', 'error');
+                    this.manageChatId = chatId;
+                    $('manage-chat-name').textContent = chat.name || 'بدون اسم';
+                    $('manage-chat-code').textContent = chat.code || '-';
+                    await this.renderManageMembers(chatId, chat);
+                    this.openModal('chat-manage-modal');
+                } catch (e) { console.error(e); this.notify(errText(e, 'خطأ في تحميل بيانات الدردشة'), 'error'); }
+            }
+            async renderManageMembers(chatId, chat) {
+                const ids = Object.keys(chat.members || {});
+                $('allowed-users-count').textContent = ids.length;
+                const profiles = await Promise.all(ids.map((id) => this.getProfile(id)));
+                $('allowed-users-list').innerHTML = ids.map((uid, i) => {
+                    const u = profiles[i], isOwner = uid === chat.owner;
+                    return `<div class="flex items-center justify-between p-3 bg-gray-800 rounded-xl gap-2">
+                        <div class="flex items-center gap-3 min-w-0"><div class="w-10 h-10 rounded-xl bg-gradient-to-br from-blue-500 to-blue-600 flex items-center justify-center flex-shrink-0"><i class="fas fa-user text-white text-sm" aria-hidden="true"></i></div>
+                        <div class="min-w-0"><div class="font-medium truncate">${esc(u.username || u.email)}</div><div class="text-xs text-gray-400 truncate">${esc(u.email)}</div><div class="text-xs text-gray-500">انضم: ${fmtDate(chat.members[uid].joinedAt)}</div></div></div>
+                        <div class="flex items-center gap-2">${isOwner ? '<span class="owner-badge">مالك</span>' : `<button data-action="revoke" data-id="${esc(uid)}" data-chat="${esc(chatId)}" class="text-red-400 hover:text-red-300" aria-label="إزالة"><i class="fas fa-times" aria-hidden="true"></i></button>`}</div></div>`;
+                }).join('') || '<div class="text-gray-500 text-center py-4">لا يوجد أعضاء</div>';
+            }
+            async addUserToChat() {
+                const email = $('add-user-email').value.trim().toLowerCase();
+                const chatId = this.manageChatId;
+                if (!chatId) return;
+                if (!EMAIL_RE.test(email)) return this.notify('بريد إلكتروني غير صالح', 'error');
+                try {
+                    const uid = (await db.ref('emailIndex/' + emailKey(email)).once('value')).val();
+                    if (!uid) return this.notify('المستخدم غير موجود', 'error');
+                    if ((await db.ref('chats/' + chatId + '/members/' + uid).once('value')).exists()) return this.notify('المستخدم مضاف مسبقاً', 'warning');
+                    await db.ref().update({ ['chats/' + chatId + '/members/' + uid]: { joinedAt: nowISO() }, ['userChats/' + uid + '/' + chatId]: true });
+                    $('add-user-email').value = '';
+                    this.notify('تم إضافة المستخدم بنجاح', 'success');
+                    const chat = (await db.ref('chats/' + chatId).once('value')).val();
+                    await this.renderManageMembers(chatId, chat);
+                    this.refreshView();
+                } catch (e) { console.error(e); this.notify(errText(e, 'خطأ في إضافة المستخدم'), 'error'); }
+            }
+            async revokeAccess(uid, chatId) {
+                if (!(await this.confirm('إزالة هذا المستخدم من الدردشة؟'))) return;
+                try {
+                    await db.ref().update({ ['chats/' + chatId + '/members/' + uid]: null, ['userChats/' + uid + '/' + chatId]: null });
+                    this.notify('تم إزالة المستخدم', 'success');
+                    const chat = (await db.ref('chats/' + chatId).once('value')).val();
+                    if (chat) await this.renderManageMembers(chatId, chat);
+                    this.refreshView();
+                } catch (e) { console.error(e); this.notify(errText(e, 'خطأ في إزالة المستخدم'), 'error'); }
+            }
+            async deleteChat(chatId, fromManage) {
+                if (!chatId) return;
+                if (!(await this.confirm('حذف هذه الدردشة وجميع رسائلها نهائياً؟'))) return;
+                this.showLoading('جاري حذف الدردشة...');
+                try {
+                    const chat = (await db.ref('chats/' + chatId).once('value')).val();
+                    if (!chat) { this.notify('الدردشة غير موجودة', 'error'); return; }
+                    const up = { ['chats/' + chatId]: null, ['messages/' + chatId]: null };
+                    if (chat.code) up['chatCodes/' + chat.code] = null;
+                    Object.keys(chat.members || {}).forEach((u) => { up['userChats/' + u + '/' + chatId] = null; });
+                    await db.ref().update(up);
+                    if (fromManage) this.closeModal('chat-manage-modal');
+                    if (this.currentChatId === chatId) this.requestCloseChat();
+                    this.notify('تم حذف الدردشة بنجاح', 'success');
+                    this.refreshView();
+                } catch (e) { console.error(e); this.notify(errText(e, 'خطأ في حذف الدردشة'), 'error'); }
+                finally { this.hideLoading(); }
+            }
+
+            /* ---------- نافذة الدردشة ---------- */
+            async enterChat(chatId) {
+                this.showLoading('جاري الدخول للدردشة...');
+                try {
+                    const chat = (await db.ref('chats/' + chatId).once('value')).val();
+                    if (!chat) { this.notify('الدردشة غير موجودة', 'error'); return; }
+                    this.closeSidebar();
+                    this.openChatWindow(chatId, chat);
+                } catch (e) { console.error(e); this.notify(errText(e, 'ليس لديك صلاحية للدخول إلى هذه الدردشة'), 'error'); }
+                finally { this.hideLoading(); }
+            }
+            openChatWindow(chatId, chat) {
+                if (this.chatOpen) this.detachMessages();
+                this.currentChatId = chatId; this.currentChat = chat;
+                $('chat-room-name').textContent = chat.name || 'بدون اسم';
+                $('chat-room-code').textContent = 'كود: ' + (chat.code || '-');
+                $('chat-info-code').textContent = chat.code || '-';
+                $('chat-info-owner').textContent = chat.ownerEmail || 'غير معروف';
+                $('chat-members-number').textContent = Object.keys(chat.members || {}).length;
+                $('chat-info-container').classList.add('hidden'); $('members-list-container').classList.add('hidden');
+                $('chat-window').classList.remove('hidden');
+                if (!this.chatOpen) { history.pushState({ chat: 1 }, ''); this.chatOpen = true; }
+                this.attachMessages(chatId);
+                setTimeout(() => $('chat-message-input').focus(), 100);
+            }
+            requestCloseChat() {
+                if (this.chatOpen && history.state && history.state.chat) history.back();
+                else this.closeChatUI();
+            }
+            closeChatUI() {
+                this.detachMessages();
+                $('chat-window').classList.add('hidden');
+                $('messages-list').innerHTML = '';
+                $('no-messages').classList.remove('hidden');
+                this.chatOpen = false; this.currentChatId = null; this.currentChat = null;
+                if (this.user) this.refreshView();
+            }
+            attachMessages(chatId) {
+                this.detachMessages();
+                $('messages-list').innerHTML = '';
+                $('no-messages').classList.remove('hidden');
+                const query = db.ref('messages/' + chatId).orderByChild('timestamp').limitToLast(100);
+                this.msgQuery = query;
+                this.onAdded = query.on('child_added', (snap) => {
+                    const key = snap.key, msg = snap.val();
+                    this.queue = this.queue.then(() => this.renderMessage(chatId, key, msg)).catch((e) => console.error(e));
+                }, (err) => { console.error(err); this.notify(errText(err, 'تعذر تحميل الرسائل'), 'error'); });
+                this.onRemoved = query.on('child_removed', (snap) => {
+                    const el = $('messages-list').querySelector('[data-key="' + snap.key + '"]');
+                    if (el) el.remove();
+                    if (!$('messages-list').children.length) $('no-messages').classList.remove('hidden');
+                });
+            }
+            detachMessages() {
+                if (this.msgQuery) {
+                    if (this.onAdded) this.msgQuery.off('child_added', this.onAdded);
+                    if (this.onRemoved) this.msgQuery.off('child_removed', this.onRemoved);
+                }
+                this.msgQuery = null; this.onAdded = null; this.onRemoved = null;
+                this.queue = Promise.resolve();
+            }
+            async renderMessage(chatId, key, msg) {
+                if (!msg || this.currentChatId !== chatId) return;
+                const list = $('messages-list');
+                if (list.querySelector('[data-key="' + key + '"]')) return;
+                const sender = await this.getProfile(msg.senderId);
+                if (this.currentChatId !== chatId) return;
+                const area = $('chat-messages-area');
+                const nearBottom = area.scrollHeight - area.scrollTop - area.clientHeight < 150;
+                const mine = msg.senderId === this.user.uid;
+                const role = sender.role || 'user';
+                const bubble = role === 'admin' ? 'admin' : role === 'moderator' ? 'moderator' : (mine ? 'user' : 'other');
+                const badge = role === 'admin' ? '<span class="badge-admin mx-2">مسؤول</span>' : role === 'moderator' ? '<span class="badge-moderator mx-2">مشرف</span>' : '';
+                const canDelete = this.role === 'admin' || (this.currentChat && this.currentChat.owner === this.user.uid);
+                const el = document.createElement('div');
+                el.className = 'message-container ' + (mine ? 'user' : 'other');
+                el.dataset.key = key;
+                el.innerHTML = `<div class="flex ${mine ? 'flex-row-reverse' : ''} gap-3" style="max-width:88%">
+                    <div class="w-10 h-10 rounded-2xl bg-gradient-to-br ${mine ? 'from-blue-500 to-blue-600' : 'from-gray-700 to-gray-800'} flex items-center justify-center flex-shrink-0"><i class="fas fa-user text-white text-sm" aria-hidden="true"></i></div>
+                    <div class="min-w-0">
+                        <div class="flex items-center ${mine ? 'justify-end' : ''} mb-1 flex-wrap"><span class="font-bold text-sm">${esc(sender.username || sender.email || 'مجهول')}</span>${badge}<span class="text-xs text-gray-500 mx-2">${msg.timestamp ? fmtTime(msg.timestamp) : ''}</span>
+                        ${canDelete ? `<button data-action="del-msg" data-id="${esc(key)}" class="text-xs text-red-400 hover:text-red-300" aria-label="حذف الرسالة"><i class="fas fa-trash" aria-hidden="true"></i></button>` : ''}</div>
+                        <div class="message-bubble ${bubble}">${esc(msg.text)}</div>
+                    </div></div>`;
+                list.appendChild(el);
+                $('no-messages').classList.add('hidden');
+                if (nearBottom || mine) area.scrollTop = area.scrollHeight;
+            }
+            async sendMessage() {
+                if (!this.currentChatId) return this.notify('لا توجد دردشة نشطة', 'error');
+                const input = $('chat-message-input'), btn = $('chat-send-btn');
+                const text = input.value.trim();
+                if (!text) return;
+                if (text.length > 1000) return this.notify('الرسالة طويلة جداً (الحد الأقصى 1000 حرف)', 'error');
+                btn.disabled = true;
+                const chatId = this.currentChatId;
+                try {
+                    await db.ref('messages/' + chatId).push({ text, senderId: this.user.uid, timestamp: firebase.database.ServerValue.TIMESTAMP });
+                    input.value = ''; input.style.height = 'auto'; input.focus();
+                    db.ref('chats/' + chatId + '/lastActivity').set(nowISO()).catch(() => {});
+                    db.ref('users/' + this.user.uid + '/messageCount').transaction((v) => (v || 0) + 1).then((r) => {
+                        if (r.committed) { this.profile.messageCount = r.snapshot.val(); $('user-messages-count').textContent = this.profile.messageCount; }
+                    }).catch(() => {});
+                } catch (e) { console.error(e); this.notify(errText(e, 'خطأ في إرسال الرسالة'), 'error'); }
+                finally { btn.disabled = false; }
+            }
+            async deleteMessage(key) {
+                if (!this.currentChatId) return;
+                if (!(await this.confirm('حذف هذه الرسالة؟'))) return;
+                try { await db.ref('messages/' + this.currentChatId + '/' + key).remove(); }
+                catch (e) { this.notify(errText(e, 'تعذر حذف الرسالة'), 'error'); }
+            }
+            async loadChatInfo() {
+                if (!this.currentChatId) return;
+                try {
+                    const chat = (await db.ref('chats/' + this.currentChatId).once('value')).val();
+                    if (!chat) return;
+                    this.currentChat = chat;
+                    const ids = Object.keys(chat.members || {});
+                    $('chat-members-number').textContent = ids.length; $('chat-info-members-count').textContent = ids.length;
+                    const profiles = await Promise.all(ids.map((id) => this.getProfile(id)));
+                    $('chat-members-list').innerHTML = ids.map((uid, i) => {
+                        const u = profiles[i];
+                        return `<div class="member-item"><div class="min-w-0"><div class="text-sm font-medium truncate">${esc(u.username || u.email)} ${uid === this.user.uid ? '(أنت)' : ''}</div>
+                            <div class="text-xs text-gray-400 truncate">${esc(u.email)}</div><div class="text-xs text-gray-500">انضم: ${fmtDate(chat.members[uid].joinedAt)}</div></div>
+                            <div class="flex flex-col items-end gap-1">${uid === chat.owner ? '<span class="owner-badge">مالك</span>' : ''}<span class="${ROLE_BADGE[u.role] || 'badge-user'}">${ROLE_TEXT[u.role] || 'مستخدم'}</span></div></div>`;
+                    }).join('');
+                } catch (e) { console.error(e); }
+            }
+        }
+
+        document.addEventListener('DOMContentLoaded', () => {
+            const app = new SecureChatApp();
+            // إخفاء شاشة التحميل بمجرد حسم حالة المصادقة (مع حد أقصى 8 ثوانٍ)
+            setTimeout(() => { const l = $('loading-screen'); if (l && !l.classList.contains('hidden') && document.querySelectorAll('#login-screen:not(.hidden), #user-panel:not(.hidden), #admin-panel:not(.hidden), #moderator-app:not(.hidden)').length === 0) app.showLogin(); }, 8000);
+            window.chatApp = app;
+        });
+    })();
+    </script>
+</body>
+</html>
